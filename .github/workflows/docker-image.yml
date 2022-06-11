@@ -1,0 +1,53 @@
+name: Docker Image CI
+
+on:
+  # push:
+  #   branches: [ master ]
+  workflow_dispatch:
+    inputs:
+      kubespray_branch:
+        description: "Kubespray branch"
+        required: true
+        type: choice
+        options:
+          - "release-2.17"
+          - "release-2.19"
+        default: "release-2.17"
+      tag_message:
+        description: "Tag message"
+        required: true
+        default: "latest"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/checkout@v3
+      with:
+        repository: kubernetes-sigs/kubespray
+        ref: ${{ github.event.inputs.kubespray_branch }}
+        path: ./kubespray
+    - name: Dump GitHub context
+      if: github.event_name == 'push'
+      env:
+        GITHUB_CONTEXT: ${{ toJSON(github) }}
+      run: echo "commit id - ${{ github.event.commits[0].id }}"
+    - name: Login docker hub
+      env:
+        DOCKER_USERNAME: ${{secrets.DOCKER_USERNAME}}
+        DOCKER_PASSWORD: ${{secrets.DOCKER_PASSWORD}}
+      run: |
+        echo "${DOCKER_PASSWORD}" | docker login --username ${DOCKER_USERNAME} --password-stdin
+    - name: Set up Docker Buildx
+      uses: crazy-max/ghaction-docker-buildx@v1
+      with:
+        buildx-version: latest
+    - name: Build dockerfile (with push)
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        docker buildx build \
+        --platform=linux/amd64,linux/arm64 \
+        --output "type=image,push=true" \
+        --build-arg "KUBESPRAY_BRANCH=${{ github.event.inputs.kubespray_branch }}" \
+        --file ./Dockerfile . \
+        --tag jiangink/kubespray:"${{ github.event.inputs.kubespray_branch }}-${{ github.event.inputs.tag_message }}"
